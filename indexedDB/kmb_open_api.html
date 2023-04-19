@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <title>IndexedDB with KMB Open API</title>
+</head>
+<body>
+    <button id="addBtn">add</button>
+    <button id="listBtn">list</button>
+    <button id="fetchRouteListBtn">fetch route list</button>
+    <button id="fetchStopListBtn">fetch stop list</button>
+
+    <script>
+        let db;
+
+        const ROUTE_API_URL = 'https://data.etabus.gov.hk/v1/transport/kmb/route';
+        const STOP_API_URL = 'https://data.etabus.gov.hk/v1/transport/kmb/stop';
+
+        const dbReq = indexedDB.open('foo', 2);
+        dbReq.onsuccess = evt => {
+            db = evt.target.result
+            console.log('success', db)
+        }
+
+        dbReq.onupgradeneeded = evt => {
+            console.log('upgradeneeded')
+            db = evt.target.result
+
+            if (!db.objectStoreNames.contains('name')) {
+                db.createObjectStore('name', { autoIncrement: true })
+            }
+
+            if (!db.objectStoreNames.contains('route')) {
+                const routeOS = db.createObjectStore('route', { keyPath: 'key' })
+                routeOS.createIndex('route', 'route', { unique: false})
+                routeOS.createIndex('bound', 'bound', { unique: false})
+                routeOS.createIndex('service_type', 'service_type', { unique: false})
+            }
+
+            if (!db.objectStoreNames.contains('stop')) {
+                const stopOS = db.createObjectStore('stop', { keyPath: 'stop' })
+            }
+        }
+
+        function addData() {
+            console.log('addData')
+
+            const trans = db.transaction('name', 'readwrite')
+            trans.oncomplete = evt => {
+                console.log('complete')
+            }
+
+            trans.onerror = () => {
+                console.error('error', trans.error)
+            }
+
+            const charCode = Math.floor(Math.random() * 26) + 65;
+
+            const objectStore = trans.objectStore('name')
+            objectStore.add({
+                charCode,
+                char: String.fromCharCode(charCode),
+            })
+        }
+
+        function listData() {
+            console.log('listData')
+
+            const trans = db.transaction('name')
+            const objectStore = trans.objectStore('name')
+
+            objectStore.openCursor().onsuccess = evt => {
+                const cursor = evt.target.result
+                console.log('cursor', cursor)
+                if (!cursor) {
+                    return;
+                }
+                console.log(cursor.value)
+                cursor.continue();
+            }
+        }
+
+        async function fetchRouteList() {
+            console.log('Fetch Route List')
+            const response = await fetch(ROUTE_API_URL)
+            const result = await response.json()
+            console.log(result)
+
+            const trans = db.transaction('route', 'readwrite')
+            trans.oncomplete = () => {
+                console.log('transaction success')
+            }
+            trans.onerror = () => {
+                console.error('transaction error', trans.error)
+            }
+
+            const objectStore = trans.objectStore('route')
+            objectStore.clear()
+
+            result.data.forEach(item => {
+                const key = `${item.route}--${item.bound}--${item.service_type}`
+                objectStore.add({key, ...item})
+            })
+
+            console.log('count', objectStore.count())
+        }
+
+        async function fetchStopList() {
+            console.log('Fetch Stop List')
+            const response = await fetch(STOP_API_URL)
+            const result = await response.json()
+            console.log(result)
+
+            const trans = db.transaction('stop', 'readwrite')
+            trans.oncomplete = () => {
+                console.log('transaction success')
+            }
+            trans.onerror = () => {
+                console.error('transaction error', trans.error)
+            }
+
+            const objectStore = trans.objectStore('stop')
+            objectStore.clear()
+
+            result.data.forEach(item => {
+                objectStore.add(item)
+            })
+
+            console.log('count', objectStore.count())
+        }
+
+        addBtn.addEventListener('click', addData, false)
+        listBtn.addEventListener('click', listData, false)
+        fetchRouteListBtn.addEventListener('click', fetchRouteList, false)
+        fetchStopListBtn.addEventListener('click', fetchStopList, false)
+    </script>
+</body>
+</html>
