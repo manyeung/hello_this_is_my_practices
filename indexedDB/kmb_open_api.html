@@ -5,18 +5,42 @@
     <title>IndexedDB with KMB Open API</title>
 </head>
 <body>
-    <button id="addBtn">add</button>
-    <button id="listBtn">list</button>
+    <!-- <button id="addBtn">add</button> -->
+    <!-- <button id="listBtn">list</button> -->
     <button id="fetchRouteListBtn">fetch route list</button>
     <button id="fetchStopListBtn">fetch stop list</button>
+    <button id="fetchRouteStopListBtn">fetch route stop list</button>
+    <button id="aBtn">a</button>
+    <button id="bBtn">b</button>
+
+    <p>
+        Route Number: <input id="routeNumInput" />
+    </p>
+    <p>
+        Route:
+        <select id="routeSelect">
+            <option></option>
+        </select>
+    </p>
+    <p>
+        Stop:
+        <select id="stopSelect">
+            <option></option>
+        </select>
+        <button id="refreshBtn">refresh</button>
+    </p>
+
+    <p id="etaList"></p>
 
     <script>
         let db;
 
         const ROUTE_API_URL = 'https://data.etabus.gov.hk/v1/transport/kmb/route';
         const STOP_API_URL = 'https://data.etabus.gov.hk/v1/transport/kmb/stop';
+        const ROUTE_STOP_API_URL = 'https://data.etabus.gov.hk/v1/transport/kmb/route-stop';
+        const ETA_API_URL = 'https://data.etabus.gov.hk/v1/transport/kmb/eta/%stop/%route/%service_type'
 
-        const dbReq = indexedDB.open('foo', 2);
+        const dbReq = indexedDB.open('foo', 3);
         dbReq.onsuccess = evt => {
             db = evt.target.result
             console.log('success', db)
@@ -31,7 +55,7 @@
             }
 
             if (!db.objectStoreNames.contains('route')) {
-                const routeOS = db.createObjectStore('route', { keyPath: 'key' })
+                const routeOS = db.createObjectStore('route', { keyPath: 'routeId' })
                 routeOS.createIndex('route', 'route', { unique: false})
                 routeOS.createIndex('bound', 'bound', { unique: false})
                 routeOS.createIndex('service_type', 'service_type', { unique: false})
@@ -39,45 +63,70 @@
 
             if (!db.objectStoreNames.contains('stop')) {
                 const stopOS = db.createObjectStore('stop', { keyPath: 'stop' })
+                stopOS.createIndex('lat', 'lat', { unique: false})
+                stopOS.createIndex('long', 'long', { unique: false})
+            }
+
+            if (!db.objectStoreNames.contains('route-stop')) {
+                const routeStopOS = db.createObjectStore('route-stop', { keyPath: 'routeStopId' })
+                routeStopOS.createIndex('routeId', 'routeId', { unique: false})
+                routeStopOS.createIndex('route', 'route', { unique: false})
+                routeStopOS.createIndex('bound', 'bound', { unique: false})
+                routeStopOS.createIndex('service_type', 'service_type', { unique: false})
+                routeStopOS.createIndex('stop', 'stop', { unique: false})
+                routeStopOS.createIndex('seq', 'seq', { unique: false})
             }
         }
 
-        function addData() {
-            console.log('addData')
+        // function addData() {
+        //     console.log('addData')
 
-            const trans = db.transaction('name', 'readwrite')
-            trans.oncomplete = evt => {
-                console.log('complete')
-            }
+        //     const trans = db.transaction('name', 'readwrite')
+        //     trans.oncomplete = evt => {
+        //         console.log('complete')
+        //     }
 
-            trans.onerror = () => {
-                console.error('error', trans.error)
-            }
+        //     trans.onerror = () => {
+        //         console.error('error', trans.error)
+        //     }
 
-            const charCode = Math.floor(Math.random() * 26) + 65;
+        //     const charCode = Math.floor(Math.random() * 26) + 65;
 
-            const objectStore = trans.objectStore('name')
-            objectStore.add({
-                charCode,
-                char: String.fromCharCode(charCode),
-            })
+        //     const objectStore = trans.objectStore('name')
+        //     objectStore.add({
+        //         charCode,
+        //         char: String.fromCharCode(charCode),
+        //     })
+        // }
+
+        // function listData() {
+        //     console.log('listData')
+
+        //     const trans = db.transaction('name')
+        //     const objectStore = trans.objectStore('name')
+
+        //     objectStore.openCursor().onsuccess = evt => {
+        //         const cursor = evt.target.result
+        //         console.log('cursor', cursor)
+        //         if (!cursor) {
+        //             return;
+        //         }
+        //         console.log(cursor.value)
+        //         cursor.continue();
+        //     }
+        // }
+
+        function formatRouteId(route, bound, service_type) {
+            return `${route}--${bound}--${service_type}`;
         }
 
-        function listData() {
-            console.log('listData')
+        function formatRouteStopId(route, bound, service_type, seq, stop) {
+            return `${route}--${bound}--${service_type}--${seq}--${stop}`;
+        }
 
-            const trans = db.transaction('name')
-            const objectStore = trans.objectStore('name')
-
-            objectStore.openCursor().onsuccess = evt => {
-                const cursor = evt.target.result
-                console.log('cursor', cursor)
-                if (!cursor) {
-                    return;
-                }
-                console.log(cursor.value)
-                cursor.continue();
-            }
+        function parseRouteId(routeId) {
+            const [route, bound, serviceType] = routeId.split('--')
+            return {route, bound, serviceType}
         }
 
         async function fetchRouteList() {
@@ -86,7 +135,7 @@
             const result = await response.json()
             console.log(result)
 
-            const trans = db.transaction('route', 'readwrite')
+            const trans = db.transaction(['route'], 'readwrite')
             trans.oncomplete = () => {
                 console.log('transaction success')
             }
@@ -98,8 +147,9 @@
             objectStore.clear()
 
             result.data.forEach(item => {
-                const key = `${item.route}--${item.bound}--${item.service_type}`
-                objectStore.add({key, ...item})
+                const routeId = formatRouteId(item.route, item.bound, item.service_type)
+                item.routeId = routeId
+                objectStore.add(item)
             })
 
             console.log('count', objectStore.count())
@@ -123,16 +173,171 @@
             objectStore.clear()
 
             result.data.forEach(item => {
+                item.lat = parseFloat(item.lat)
+                item.long = parseFloat(item.long)
                 objectStore.add(item)
             })
 
             console.log('count', objectStore.count())
         }
 
-        addBtn.addEventListener('click', addData, false)
-        listBtn.addEventListener('click', listData, false)
+        async function fetchRouteStopList() {
+            console.log('Fetch Route Stop List')
+            const response = await fetch(ROUTE_STOP_API_URL)
+            const result = await response.json()
+            console.log(result)
+
+            const trans = db.transaction(['route-stop'], 'readwrite')
+            trans.oncomplete = () => {
+                console.log('transaction success')
+            }
+            trans.onerror = () => {
+                console.error('transaction error', trans.error)
+            }
+
+            const objectStore = trans.objectStore('route-stop')
+            objectStore.clear()
+
+            result.data.forEach(item => {
+                const routeId = formatRouteId(item.route, item.bound, item.service_type)
+                const routeStopId = formatRouteStopId(item.route, item.bound, item.service_type, item.seq, item.stop)
+                item.routeStopId = routeStopId
+                item.routeId = routeId
+                item.seq = parseInt(item.seq)
+                objectStore.add(item)
+            })
+
+            console.log('count', objectStore.count())
+        }
+
+        async function handleRouteNumChange(event) {
+            const routeValue = event.target.value.toUpperCase()
+            routeNumInput.value = routeValue
+
+            const routes = await new Promise(resolve => {
+                const objectStore = db.transaction('route').objectStore('route')
+                const idx = objectStore.index('route')
+                const req = idx.getAll(routeValue)
+                req.onsuccess = evt => resolve(evt.target.result)
+            })
+
+            let html = '<option></option>'
+            html += routes.map(route => (`<option value="${route.routeId}">${route.orig_tc} =&gt; ${route.dest_tc} (${route.service_type})</option>`)).join('')
+            routeSelect.innerHTML = html
+        }
+
+        async function handleRouteSelectChange(event) {
+            const routeId = event.target.value
+
+            if (!routeId) {
+                return
+            }
+
+            const trans = db.transaction(['route-stop', 'stop'])
+
+            const routeStops = await new Promise(resolve => {
+                const objectStore = trans.objectStore('route-stop')
+                const idx = objectStore.index('routeId')
+                const req = idx.getAll(routeId)
+                req.onsuccess = evt => {
+                    const routeStops = evt.target.result
+                    routeStops.sort((a, b) => a.seq - b.seq)
+                    resolve(routeStops)
+                }
+            })
+
+            await Promise.all(
+                routeStops.map(routeStop => new Promise(resolve => {
+                    const objectStore = trans.objectStore('stop')
+                    const req = objectStore.get(routeStop.stop)
+                    req.onsuccess = evt => {
+                        routeStop._stop = evt.target.result
+                        resolve()
+                    }
+                }))
+            )
+
+            let html = '<option></option>'
+            html += routeStops.map(({seq, _stop: stop}) => (`<option value="${stop.stop}">${seq} - ${stop.name_tc}</option>`)).join('')
+            stopSelect.innerHTML = html
+        }
+
+        function loading() {
+            routeNumInput.disabled = true
+            routeSelect.disabled = true
+            stopSelect.disabled = true
+        }
+
+        function loaded() {
+            routeNumInput.disabled = false
+            routeSelect.disabled = false
+            stopSelect.disabled = false
+        }
+
+        async function getEta() {
+            loading()
+
+            const {route, bound, serviceType} = parseRouteId(routeSelect.value)
+            const url = ETA_API_URL.replace('%stop', stopSelect.value)
+                .replace('%route', route)
+                .replace('%service_type', serviceType)
+
+            const response = await fetch(url)
+            const result = await response.json()
+            console.log(result)
+
+            let html = result.data.filter(item => item.dir === bound)
+                .map(({eta, eta_seq}) => `${eta_seq} - ${eta}<br/>`)
+                .join('')
+
+            etaList.innerHTML = html
+
+            loaded()
+        }
+
+        function handleStopSelectChange() {
+            getEta()
+        }
+
+        function handleRefreshBtnClick() {
+            if (routeSelect.value && stopSelect.value) {
+                getEta()
+            }
+        }
+
+        // addBtn.addEventListener('click', addData, false)
+        // listBtn.addEventListener('click', listData, false)
         fetchRouteListBtn.addEventListener('click', fetchRouteList, false)
         fetchStopListBtn.addEventListener('click', fetchStopList, false)
+        fetchRouteStopListBtn.addEventListener('click', fetchRouteStopList, false)
+        routeNumInput.addEventListener('change', handleRouteNumChange, false)
+        routeSelect.addEventListener('change', handleRouteSelectChange, false)
+        stopSelect.addEventListener('change', handleStopSelectChange, false)
+        refreshBtn.addEventListener('click', handleRefreshBtnClick, false)
+
+        aBtn.addEventListener('click', () => {
+            const objectStore = db.transaction('route').objectStore('route')
+
+            const t0 = Date.now()
+            const req = objectStore.getAll()
+            req.onsuccess = evt => {
+                const result = evt.target.result.filter(({route}) => route === '2')
+                console.log('a', result.length, Date.now() - t0)
+                console.log(result)
+            }
+        }, false)
+
+        bBtn.addEventListener('click', () => {
+            const objectStore = db.transaction('route').objectStore('route')
+            const idx = objectStore.index('route')
+
+            const t0 = Date.now()
+            const req = idx.getAll(IDBKeyRange.only('2'))
+            req.onsuccess = evt => {
+                console.log('b', evt.target.result.length, Date.now() - t0)
+                console.log(evt.target.result);
+            }
+        }, false)
     </script>
 </body>
 </html>
