@@ -1,0 +1,21 @@
+{
+    "name": "smyeung/package1",
+    "type": "library",
+    "require": {
+        "monolog/monolog": "^1.27"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^6.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "Smyeung\\Package1\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "man yeung",
+            "email": "many.eung.personal@gmail.com"
+        }
+    ]
+}

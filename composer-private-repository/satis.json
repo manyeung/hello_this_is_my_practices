@@ -1,0 +1,11 @@
+{
+    "name": "smyeung/composer",
+    "homepage": "https://www.example.com",
+    "repositories": [
+        {
+            "type": "path",
+            "url": "./skeleton"
+        }
+    ],
+    "require-all": true
+}
